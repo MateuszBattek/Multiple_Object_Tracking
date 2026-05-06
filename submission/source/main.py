@@ -21,4 +21,8 @@ with open(det_path) as f:
         info = [float(i) for i in info]
         det[int(frame)] = info
 
-print(det)
+images = []
+
+for frame in range(1, int(seqinfo["frames"] + 1)):
+    image_path = MOT_folder / seqinfo["imDir"] / f"{frame:06d}{seqinfo['imExt']}"
+    images.append(image_path)
