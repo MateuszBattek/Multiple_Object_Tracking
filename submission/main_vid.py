@@ -1,6 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 
@@ -66,7 +67,11 @@ def iou_matrix(boxes_a: list, boxes_b: list) -> np.ndarray:
 
 
 def greedy_match(iou_mat: np.ndarray, threshold: float):
-    """Greedy bipartite matching by descending IoU."""
+    """Greedy bipartite matching by descending IoU.
+
+    Returns (matches, unmatched_rows, unmatched_cols).
+    matches is a list of (row_idx, col_idx) pairs.
+    """
     mat = iou_mat.copy()
     matches = []
     while mat.size > 0 and mat.max() >= threshold:
@@ -162,6 +167,74 @@ class Tracker:
         return results
 
 
+# Visualization
+
+_PALETTE = [
+    (230,  25,  75), ( 60, 180,  75), (255, 225,  25), (  0, 130, 200),
+    (245, 130,  48), (145,  30, 180), ( 70, 240, 240), (240,  50, 230),
+    (210, 245,  60), (250, 190, 212), (  0, 128, 128), (220, 190, 255),
+    (170, 110,  40), (255, 250, 200), (128,   0,   0), (170, 255, 195),
+    (128, 128,   0), (255, 215, 180), (  0,   0, 128), (128, 128, 128),
+]
+
+
+def _color(track_id: int) -> tuple[int, int, int]:
+    return _PALETTE[track_id % len(_PALETTE)]
+
+
+def visualize_sequence(
+    seq_path: Path,
+    conf_threshold: float,
+    iou_threshold: float,
+    max_age: int,
+    min_hits: int,
+    out_video: Path,
+) -> None:
+    seqinfo = parse_seqinfo(seq_path)
+    det = parse_detections(seq_path / "det" / "det.txt", conf_threshold)
+    img_dir = seq_path / seqinfo["imDir"]
+    img_ext = seqinfo["imExt"]
+    fps = seqinfo["frameRate"]
+    w_frame, h_frame = seqinfo["imWidth"], seqinfo["imHeight"]
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(out_video), fourcc, fps, (w_frame, h_frame))
+
+    Track.reset_counter()
+    tracker = Tracker(iou_threshold, max_age, min_hits)
+
+    n_frames = seqinfo["seqLength"]
+    for frame in range(1, n_frames + 1):
+        if frame % 100 == 0:
+            print(f"  frame {frame}/{n_frames}")
+
+        img_path = img_dir / f"{frame:06d}{img_ext}"
+        img = cv2.imread(str(img_path))
+        if img is None:
+            img = np.zeros((h_frame, w_frame, 3), dtype=np.uint8)
+
+        dets = det.get(frame, [])
+        results = tracker.step(dets)
+
+        for tid, bbox in results:
+            x, y, bw, bh = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+            color = _color(tid)
+            cv2.rectangle(img, (x, y), (x + bw, y + bh), color, 2)
+
+            label = str(tid)
+            (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            ty = max(y - 4, th + baseline)
+            cv2.rectangle(img, (x, ty - th - baseline), (x + tw, ty), color, -1)
+            cv2.putText(img, label, (x, ty - baseline),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+
+        writer.write(img)
+
+    writer.release()
+    print(f"  -> video saved to {out_video}")
+
+
+
 def run_sequence(
     seq_path: Path,
     conf_threshold: float,
@@ -191,6 +264,8 @@ def run_sequence(
 
 def main():
     output_path.mkdir(parents=True, exist_ok=True)
+    viz_path = project_path / "viz"
+    viz_path.mkdir(parents=True, exist_ok=True)
 
     for seq_path in sorted(test_path.iterdir()):
         if not seq_path.is_dir():
@@ -207,6 +282,21 @@ def main():
         with open(out_file, "w") as f:
             f.write("\n".join(lines))
         print(f"  -> {len(lines)} track-frames -> {out_file.name}")
+
+    print("\nGenerating visualization videos...")
+    for seq_path in sorted(train_path.iterdir()) + sorted(test_path.iterdir()):
+        if not seq_path.is_dir():
+            continue
+        print(f"Visualizing {seq_path.name}...")
+        out_video = viz_path / f"{seq_path.name}.mp4"
+        visualize_sequence(
+            seq_path,
+            conf_threshold=CONF_THRESHOLD,
+            iou_threshold=IOU_THRESHOLD,
+            max_age=MAX_AGE,
+            min_hits=MIN_HITS,
+            out_video=out_video,
+        )
 
 
 if __name__ == "__main__":
