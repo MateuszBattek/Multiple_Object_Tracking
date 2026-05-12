@@ -16,7 +16,7 @@ from scipy.optimize import linear_sum_assignment
 # Allow importing from this same directory
 sys.path.insert(0, str(Path(__file__).parent))
 from main import (  # noqa: E402
-    CONF_THRESHOLD, IOU_THRESHOLD, MAX_AGE, MIN_HITS,
+    CONF_THRESHOLD, IOU_THRESHOLD, IOU_THRESHOLD_LOW, MAX_AGE, MIN_HITS,
     Track, Tracker, parse_seqinfo, parse_detections,
     iou_matrix as _iou_matrix,
 )
@@ -52,7 +52,8 @@ def run_tracker(seq_path: Path) -> dict[int, list]:
     det = parse_detections(seq_path / "det" / "det.txt", 0.0)
 
     Track.reset_counter()
-    tracker = Tracker(IOU_THRESHOLD, MAX_AGE, MIN_HITS)
+    # tracker = Tracker(IOU_THRESHOLD, MAX_AGE, MIN_HITS)
+    tracker = Tracker(IOU_THRESHOLD, IOU_THRESHOLD_LOW, MAX_AGE, MIN_HITS)
 
     hyp: dict[int, list] = {}
     for frame in range(1, seqinfo["seqLength"] + 1):
@@ -144,11 +145,19 @@ def _fast_mota(gt: dict, hyp: dict, eval_iou: float = 0.5) -> tuple[int, int, in
 # Grid search
 # ---------------------------------------------------------------------------
 
+# GRID = {
+#     "conf_threshold": [0.5, 0.7, 0.9, 0.95],
+#     "iou_threshold":  [0.1, 0.2, 0.3, 0.4],
+#     "max_age":        [1, 2, 3],
+#     "min_hits":       [1, 2, 3],
+# }
+
 GRID = {
-    "conf_threshold": [0.5, 0.7, 0.9, 0.95],
-    "iou_threshold":  [0.1, 0.2, 0.3, 0.4],
-    "max_age":        [1, 2, 3],
-    "min_hits":       [1, 2, 3],
+    "conf_threshold":     [0.3, 0.5, 0.7, 0.85, 0.9, 0.95],
+    "iou_threshold":      [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5],
+    "iou_threshold_low":  [0.03, 0.05, 0.08, 0.1],
+    "max_age":            [1, 2, 3, 5, 7],
+    "min_hits":           [1, 2, 3],
 }
 
 
@@ -170,14 +179,13 @@ def grid_search() -> None:
 
     for i, combo in enumerate(combos):
         params = dict(zip(keys, combo))
-        ct, iou_t, age, mh = (params["conf_threshold"], params["iou_threshold"],
-                               params["max_age"], params["min_hits"])
+        ct, iou_t, iou_t_low, age, mh = (params["conf_threshold"], params["iou_threshold"], params["iou_threshold_low"], params["max_age"], params["min_hits"])
 
         agg_fn = agg_fp = agg_idsw = agg_gt = 0
 
         for seq in sequences:
             Track.reset_counter()
-            tracker = Tracker(iou_t, age, mh)
+            tracker = Tracker(iou_t, iou_t_low, age, mh)
             hyp: dict[int, list] = {}
 
             for frame in range(1, seqinfos[seq]["seqLength"] + 1):

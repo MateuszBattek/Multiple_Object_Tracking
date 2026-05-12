@@ -4,3 +4,4 @@ evs_mot-train/
 viz/
 **/__pycache__/
 ./pyproject.toml
+.vscode/

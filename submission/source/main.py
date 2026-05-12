@@ -11,7 +11,11 @@ test_path = project_path / "evs_mot-test"
 output_path = project_path / "submission" / "data"
 
 CONF_THRESHOLD = 0.95   # high-confidence threshold
-IOU_THRESHOLD = 0.17    # minimum IoU to match a detection to a track
+# IOU_THRESHOLD = 0.17    # minimum IoU to match a detection to a track
+
+IOU_THRESHOLD = 0.17        # stage 1 (high-conf dets)
+IOU_THRESHOLD_LOW = 0.05    # stage 2 (low-conf dets)
+
 MAX_AGE = 3            # frames a track survives without any match
 MIN_HITS = 1           # matches needed before a track is reported
 
@@ -133,16 +137,27 @@ class Track:
 
         self.vel = (new_center - self._last_det_center) / self.time_since_update
         self._last_det_center = new_center.copy()
-        self.bbox = np.asarray(det_bbox[:4], dtype=np.float64)
+        # self.bbox = np.asarray(det_bbox[:4], dtype=np.float64)
+        
+        alpha = 0.7
+        self.bbox = alpha * np.asarray(det_bbox[:4], dtype=np.float64) + (1 - alpha) * self.bbox
+
         self.hits += 1
         self.time_since_update = 0
 
 # ---------------------------------------------------------------
 
 class Tracker:
-    def __init__(self, iou_threshold: float, max_age: int, min_hits: int):
+    # def __init__(self, iou_threshold: float, max_age: int, min_hits: int):
+    #     self.tracks: list[Track] = []
+    #     self.iou_threshold = iou_threshold
+    #     self.max_age = max_age
+    #     self.min_hits = min_hits
+
+    def __init__(self, iou_threshold: float, iou_threshold_low: float, max_age: int, min_hits: int):
         self.tracks: list[Track] = []
         self.iou_threshold = iou_threshold
+        self.iou_threshold_low = iou_threshold_low
         self.max_age = max_age
         self.min_hits = min_hits
 
@@ -169,7 +184,8 @@ class Tracker:
             remaining = [self.tracks[i] for i in unmatched_tracks]
             iou_mat2 = iou_matrix([t.bbox.tolist() for t in remaining],
                                    [d[:4] for d in low_dets])
-            matches2, _, _ = hungarian_match(iou_mat2, self.iou_threshold)
+            # matches2, _, _ = hungarian_match(iou_mat2, self.iou_threshold)
+            matches2, _, _ = hungarian_match(iou_mat2, self.iou_threshold_low)
             for local_ti, di in matches2:
                 self.tracks[unmatched_tracks[local_ti]].update(low_dets[di])
 
@@ -192,6 +208,7 @@ def run_sequence(
     seq_path: Path,
     conf_threshold: float,
     iou_threshold: float,
+    iou_threshold_low: float,
     max_age: int,
     min_hits: int,
 ) -> list[str]:
@@ -199,7 +216,8 @@ def run_sequence(
     det = parse_detections(seq_path / "det" / "det.txt", 0.0)
 
     Track.reset_counter()
-    tracker = Tracker(iou_threshold, max_age, min_hits)
+    # tracker = Tracker(iou_threshold, max_age, min_hits)
+    tracker = Tracker(iou_threshold, iou_threshold_low, max_age, min_hits)
 
     lines = []
     for frame in range(1, seqinfo["seqLength"] + 1):
@@ -228,6 +246,7 @@ def main():
             seq_path,
             conf_threshold=CONF_THRESHOLD,
             iou_threshold=IOU_THRESHOLD,
+            iou_threshold_low=IOU_THRESHOLD_LOW,
             max_age=MAX_AGE,
             min_hits=MIN_HITS,
         )

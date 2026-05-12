@@ -277,6 +277,7 @@ def run_sequence(
 
     Track.reset_counter()
     tracker = Tracker(iou_threshold, max_age, min_hits)
+    
 
     lines = []
     for frame in range(1, seqinfo["seqLength"] + 1):
