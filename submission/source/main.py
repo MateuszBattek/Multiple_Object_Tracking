@@ -137,8 +137,7 @@ class Track:
         self.hits += 1
         self.time_since_update = 0
 
-
-# Tracker
+# ---------------------------------------------------------------
 
 class Tracker:
     def __init__(self, iou_threshold: float, max_age: int, min_hits: int):
